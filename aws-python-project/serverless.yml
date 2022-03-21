@@ -1,0 +1,65 @@
+service: powertools-idempotency
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.8
+  region: eu-central-1
+  iam:
+    role:
+      statements:
+        - Effect: 'Allow'
+          Action:
+            - 'dynamodb:*'
+          Resource: '*'
+
+functions:
+  consumer:
+    memorySize: 128
+    timeout: 3
+    handler: handler.handler
+    environment:
+      IDEMPOTENCY_TABLE: !Ref IdempotencyTable
+    layers:
+      - !GetAtt AwsLambdaPowertoolsPythonLayer.Outputs.LayerVersionArn
+    events:
+    - sqs:
+        arn: !GetAtt EventQueue.Arn
+       # batchSize: 1
+
+resources:
+  Transform: AWS::Serverless-2016-10-31
+  Resources:
+    EventQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: !Sub '${AWS::Region}-${AWS::StackName}-EventQueue'
+
+    IdempotencyTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          -   AttributeName: id
+              AttributeType: S
+        KeySchema:
+          -   AttributeName: id
+              KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: expiration
+          Enabled: true
+        BillingMode: PAY_PER_REQUEST
+
+    AwsLambdaPowertoolsPythonLayer:
+      Type: AWS::Serverless::Application
+      Properties:
+        Location:
+          ApplicationId: arn:aws:serverlessrepo:eu-west-1:057560766410:applications/aws-lambda-powertools-python-layer
+          SemanticVersion: 1.25.5
+
+  Outputs:
+    EventsQueue:
+      Description: URL of Events Queue
+      Value: !Ref EventQueue
+
+
